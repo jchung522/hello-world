@@ -1,0 +1,383 @@
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; 
+SET @update_time = NOW();
+
+-- Set Start/End time for each time bucket 
+SET @today_start_time             = cast(@update_time AS DATE);
+SET @today_end_time               = @update_time;
+
+SET @seven_days_ago_start_time    = udf_seven_days_ago_start_time(@today_end_time);
+SET @seven_days_ago_end_time      = udf_seven_days_ago_end_time(@today_end_time);
+
+-- Week starts on Saturday
+SET @week_to_date_start_time      = udf_week_to_date_start_time(@today_end_time);
+SET @week_to_date_end_time        = @today_end_time;
+
+SET @last_week_to_date_start_time = udf_last_week_to_date_start_time(@today_end_time);
+SET @last_week_to_date_end_time   = @seven_days_ago_end_time;
+
+SET @last_week_actual_start_time = udf_last_week_to_date_start_time(@today_end_time);
+SET @last_week_actual_end_time   = udf_last_week_actual_end_time(@today_end_time); 
+
+SET @past_30_days_start_time     = udf_past_30_days_start_time(@update_time);
+SET @past_30_days_end_time       = udf_past_30_days_end_time(@update_time);
+
+SET @prior_30_days_start_time    = udf_prior_30_days_start_time(@update_time);
+SET @prior_30_days_end_time      = udf_prior_30_days_end_time(@update_time);
+
+SET @year_ago_30_days_start_time = udf_year_ago_30_days_start_time(@update_time);
+SET @year_ago_30_days_end_time   = udf_year_ago_30_days_end_time(@update_time);
+
+-- Aggregate Network Size 
+
+SELECT
+	@today             := SUM(CASE WHEN insert_time < @today_end_time             THEN 1 ELSE 0 END)/1000000.00,
+	@seven_days_ago    := SUM(CASE WHEN insert_time < @seven_days_ago_end_time    THEN 1 ELSE 0 END)/1000000.00,
+	@week_to_date      := SUM(CASE WHEN insert_time < @week_to_date_end_time      THEN 1 ELSE 0 END)/1000000.00,
+	@last_week_to_date := SUM(CASE WHEN insert_time < @last_week_to_date_end_time THEN 1 ELSE 0 END)/1000000.00, -- last_week_to_date
+	@last_week_actual  := SUM(CASE WHEN insert_time < @last_week_actual_end_time  THEN 1 ELSE 0 END)/1000000.00, -- last_week_actual
+	@past_30_days      := SUM(CASE WHEN insert_time < @past_30_days_end_time      THEN 1 ELSE 0 END)/1000000.00, -- prior_30_days
+	@prior_30_days     := SUM(CASE WHEN insert_time < @prior_30_days_end_time     THEN 1 ELSE 0 END)/1000000.00, -- past_30_days
+	@year_ago_30_days  := SUM(CASE WHEN insert_time < @year_ago_30_days_end_time  THEN 1 ELSE 0 END)/1000000.00
+FROM
+	member_contact;
+
+-- Referrals    (id=46)
+-- References   (id=47)
+-- Member Other (id=48)
+-- Total Touches (id=49)
+-- Member-to-Member Touches (id=44)
+
+SELECT
+	@today_referrals             := SUM(CASE WHEN insert_time BETWEEN @today_start_time AND @today_end_time THEN 1 ELSE 0 END),
+	@seven_days_ago_referrals    := SUM(CASE WHEN insert_time BETWEEN @seven_days_ago_start_time AND @seven_days_ago_end_time THEN 1 ELSE 0 END),
+	@week_to_date_referrals      := SUM(CASE WHEN insert_time BETWEEN @week_to_date_start_time AND @week_to_date_end_time THEN 1 ELSE 0 END),
+	@last_week_to_date_referrals := SUM(CASE WHEN insert_time BETWEEN @last_week_to_date_start_time AND @last_week_to_date_end_time THEN 1 ELSE 0 END)
+FROM
+	member_referral mr
+	JOIN subscriber s ON s.subscriber_id = mr.member_id AND s.subscriber_type = 'S' AND s.email NOT LIKE '%@theladders.___'
+WHERE
+	contact_email NOT LIKE '%@theladders.___' AND insert_time BETWEEN @last_week_to_date_start_time AND @today_end_time;
+
+SELECT
+	 @last_week_actual_referrals := SUM(CASE WHEN insert_time BETWEEN @last_week_actual_start_time AND @last_week_actual_end_time THEN 1 ELSE 0 END),
+	 @prior_30_days_referrals    := SUM(CASE WHEN insert_time BETWEEN @prior_30_days_start_time AND @prior_30_days_end_time THEN 1 ELSE 0 END),
+	 @past_30_days_referrals     := SUM(CASE WHEN insert_time BETWEEN @past_30_days_start_time AND @past_30_days_end_time THEN 1 ELSE 0 END),
+	 @year_ago_30_days_referrals := SUM(CASE WHEN insert_time BETWEEN @year_ago_30_days_start_time AND @year_ago_30_days_end_time THEN 1 ELSE 0 END)
+FROM
+	member_referral mr
+	JOIN subscriber s ON s.subscriber_id = mr.member_id AND s.subscriber_type = 'S' AND s.email NOT LIKE '%@theladders.___'
+WHERE
+	contact_email NOT LIKE '%@theladders.___' AND insert_time BETWEEN @year_ago_30_days_start_time AND @past_30_days_end_time;
+
+SELECT
+	@today_references             := SUM(CASE WHEN insert_time BETWEEN @today_start_time AND @today_end_time THEN 1 ELSE 0 END),                        -- today
+	@seven_days_ago_references    := SUM(CASE WHEN insert_time BETWEEN @seven_days_ago_start_time AND @seven_days_ago_end_time THEN 1 ELSE 0 END),      -- seven_days_ago
+	@week_to_date_references      := SUM(CASE WHEN insert_time BETWEEN @week_to_date_start_time AND @week_to_date_end_time THEN 1 ELSE 0 END),          -- week_to_date
+	@last_week_to_date_references := SUM(CASE WHEN insert_time BETWEEN @last_week_to_date_start_time AND @last_week_to_date_end_time THEN 1 ELSE 0 END) -- last_week_to_date
+FROM
+	member_reference mr
+	JOIN subscriber s on s.subscriber_id = mr.requester_id AND s.subscriber_type = 'S' AND s.email not like '%@theladders.___'
+WHERE
+	referee_email NOT LIKE '%@theladders.___' AND insert_time BETWEEN @last_week_to_date_start_time AND @today_end_time;
+
+SELECT
+	@last_week_actual_references := SUM(CASE WHEN insert_time BETWEEN @last_week_actual_start_time AND @last_week_actual_end_time THEN 1 ELSE 0 END),  -- last_week_actual
+	@prior_30_days_references    := SUM(CASE WHEN insert_time BETWEEN @prior_30_days_start_time AND @prior_30_days_end_time THEN 1 ELSE 0 END),          -- prior_30_days
+	@past_30_days_references     := SUM(CASE WHEN insert_time BETWEEN @past_30_days_start_time AND @past_30_days_end_time THEN 1 ELSE 0 END),        -- past_30_days
+	@year_ago_30_days_references := SUM(CASE WHEN insert_time BETWEEN @year_ago_30_days_start_time AND @year_ago_30_days_end_time THEN 1 ELSE 0 END)   -- year_ago_30_days
+FROM
+	member_reference mr
+	JOIN subscriber s on s.subscriber_id = mr.requester_id AND s.subscriber_type = 'S' AND s.email not like '%@theladders.___'
+WHERE
+	referee_email NOT LIKE '%@theladders.___' AND insert_time BETWEEN @year_ago_30_days_start_time AND @past_30_days_end_time;
+
+SET
+	@today_member_other             = 0,
+	@seven_days_ago_member_other    = 0,
+	@week_to_date_member_other      = 0,
+	@last_week_to_date_member_other = 0,
+	@last_week_actual_member_other  = 0,
+	@prior_30_days_member_other     = 0,
+	@past_30_days_member_other      = 0,
+	@year_ago_30_days_member_other  = 0;
+
+-- -----------------------------------------------------------------------------------------------------------------------------------------
+
+SELECT
+	'NEW Aggregate Network Size'                                                                   AS Metric,
+	@today                                                                                         AS today,
+	@seven_days_ago                                                                                AS seven_days_ago,
+	@week_to_date                                                                                  AS week_to_date,
+	@last_week_to_date                                                                             AS last_week_to_date,
+	@last_week_actual                                                                              AS last_week_actual,
+	@past_30_days                                                                                  AS prior_30_days,
+	@prior_30_days                                                                                 AS past_30_days,
+	@year_ago_30_days                                                                              AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'NEW Referrals'                                                                                AS Metric,
+	@today_referrals                                                                               AS today,
+	@seven_days_ago_referrals                                                                      AS seven_days_ago,
+	@week_to_date_referrals                                                                        AS week_to_date,
+	@last_week_to_date_referrals                                                                   AS last_week_to_date,
+	@last_week_actual_referrals                                                                    AS last_week_actual,
+	@prior_30_days_referrals                                                                       AS prior_30_days,
+	@past_30_days_referrals                                                                        AS past_30_days,
+	@year_ago_30_days_referrals                                                                    AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'NEW References'                                                                               AS Metric,
+	@today_references                                                                              AS today,
+	@seven_days_ago_references                                                                     AS seven_days_ago,
+	@week_to_date_references                                                                       AS week_to_date,
+	@last_week_to_date_references                                                                  AS last_week_to_date,
+	@last_week_actual_references                                                                   AS last_week_actual,
+	@prior_30_days_references                                                                      AS prior_30_days,
+	@past_30_days_references                                                                       AS past_30_days,
+	@year_ago_30_days_references                                                                   AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'NEW Member Other'                                                                             AS Metric,
+	@today_member_other                                                                            AS today,
+	@seven_days_ago_member_other                                                                   AS seven_days_ago,
+	@week_to_date_member_other                                                                     AS week_to_date,
+	@last_week_to_date_member_other                                                                AS last_week_to_date,
+	@last_week_actual_member_other                                                                 AS last_week_actual,
+	@prior_30_days_member_other                                                                    AS prior_30_days,
+	@past_30_days_member_other                                                                     AS past_30_days,
+	@year_ago_30_days_member_other                                                                 AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'NEW Total Touches'                                                                            AS Metric,
+	@today_referrals             + @today_references             + @today_member_other             AS today,
+	@seven_days_ago_referrals    + @seven_days_ago_references    + @seven_days_ago_member_other    AS seven_days_ago,
+	@week_to_date_referrals      + @week_to_date_references      + @week_to_date_member_other      AS week_to_date,
+	@last_week_to_date_referrals + @last_week_to_date_references + @last_week_to_date_member_other AS last_week_to_date,
+	@last_week_actual_referrals  + @last_week_actual_references  + @last_week_actual_member_other  AS last_week_actual,
+	@prior_30_days_referrals     + @prior_30_days_references     + @prior_30_days_member_other     AS prior_30_days,
+	@past_30_days_referrals      + @past_30_days_references      + @past_30_days_member_other      AS past_30_days,
+	@year_ago_30_days_referrals  + @year_ago_30_days_references  + @year_ago_30_days_member_other  AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'NEW Member-to-Member Touches'                                                                 AS Metric,
+	@today_referrals             + @today_references             + @today_member_other             AS today,
+	@seven_days_ago_referrals    + @seven_days_ago_references    + @seven_days_ago_member_other    AS seven_days_ago,
+	@week_to_date_referrals      + @week_to_date_references      + @week_to_date_member_other      AS week_to_date,
+	@last_week_to_date_referrals + @last_week_to_date_references + @last_week_to_date_member_other AS last_week_to_date,
+	@last_week_actual_referrals  + @last_week_actual_references  + @last_week_actual_member_other  AS last_week_actual,
+	@prior_30_days_referrals     + @prior_30_days_references     + @prior_30_days_member_other     AS prior_30_days,
+	@past_30_days_referrals      + @past_30_days_references      + @past_30_days_member_other      AS past_30_days,
+	@year_ago_30_days_referrals  + @year_ago_30_days_references  + @year_ago_30_days_member_other  AS year_ago_30_days,
+	@update_time                                                                                   AS update_time;
+
+-- ========================================================================================================================================================
+-- ========================================================================================================================================================
+-- ========================================================================================================================================================
+
+
+set @start_time = cast(@update_time as date);
+set @end_time = @update_time;
+set @timeframe = 'today';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @today := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @today_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time; 
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @today_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @today_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+set @start_time = date_add(cast(@update_time as date),interval -7 day);
+set @end_time = date_add(@update_time,interval -7 day);
+set @timeframe = 'seven_days_ago';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @seven_days_ago := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @seven_days_ago_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @seven_days_ago_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @seven_days_ago_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+SET @weekstart = SUBDATE(@update_time, WEEKDAY(@update_time) +2);
+set @start_time = cast(@weekstart as date);
+set @end_time = @update_time;
+set @timeframe = 'week_to_date';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @week_to_date := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @week_to_date_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @week_to_date_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @week_to_date_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+SET @weekstart = SUBDATE(@update_time, WEEKDAY(@update_time) +2);
+set @start_time = DATE_ADD(cast(@weekstart as date), interval -7 day);
+set @end_time = date_add(@update_time,interval -7 day);
+set @timeframe = 'last_week_to_date';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @last_week_to_date := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_to_date_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_to_date_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_to_date_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+SET @weekstart = SUBDATE(@update_time, WEEKDAY(@update_time) +2);
+set @start_time = DATE_ADD(cast(@weekstart as date), interval -7 day);
+set @end_time = date_add(date_add(@start_time,interval 7 day),interval -1 second);
+set @timeframe = 'last_week_actual';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @last_week_actual := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_actual_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_actual_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @last_week_actual_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+set @start_time = date_add(cast(@update_time as date),interval -30 day);
+set @end_time = date_add(date_add(@start_time,interval 30 day),interval -1 second);
+set @timeframe = 'past_30_days';
+	 
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @past_30_days := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @past_30_days_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @past_30_days_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @past_30_days_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+set @start_time = date_add(cast(@update_time as date),interval -60 day);
+set @end_time = date_add(date_add(@start_time,interval 30 day),interval -1 second);
+set @timeframe = 'prior_30_days';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @prior_30_days = count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @prior_30_days_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @prior_30_days_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @prior_30_days_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+set @start_time = date_add(cast(@update_time as date),interval -395 day);
+set @end_time = date_add(date_add(@start_time,interval 30 day),interval -1 second);
+set @timeframe = 'year_ago_30_days';
+
+#Aggregate Network Size - Moved to usp_thales3_member_network_activity
+SELECT @year_ago_30_days := count(*)/1000000.00 from member_contact where insert_time < @end_time;
+#Referrals - Moved to usp_thales3_member_network_touches procedure
+SELECT @year_ago_30_days_referrals := count(*) from member_referral mr join subscriber s on s.subscriber_id = mr.member_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where contact_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#References - Moved to usp_thales3_member_network_touches procedure
+SELECT @year_ago_30_days_references := count(*) from member_reference mr join subscriber s on s.subscriber_id = mr.requester_id and s.subscriber_type = 'S' and s.email not like '%@theladders.___' where referee_email not like '%@theladders.___' and insert_time BETWEEN @start_time AND @end_time;
+#Member Other - Moved to usp_thales3_member_network_touches procedure
+SELECT @year_ago_30_days_member_other := 0;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+SELECT
+	'OLD Aggregate Network Size'                                                                   AS Metric,
+	@today                                                                                         AS today,
+	@seven_days_ago                                                                                AS seven_days_ago,
+	@week_to_date                                                                                  AS week_to_date,
+	@last_week_to_date                                                                             AS last_week_to_date,
+	@last_week_actual                                                                              AS last_week_actual,
+	@past_30_days                                                                                  AS prior_30_days,
+	@prior_30_days                                                                                 AS past_30_days,
+	@year_ago_30_days                                                                              AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'OLD Referrals'                                                                                AS Metric,
+	@today_referrals                                                                               AS today,
+	@seven_days_ago_referrals                                                                      AS seven_days_ago,
+	@week_to_date_referrals                                                                        AS week_to_date,
+	@last_week_to_date_referrals                                                                   AS last_week_to_date,
+	@last_week_actual_referrals                                                                    AS last_week_actual,
+	@prior_30_days_referrals                                                                       AS prior_30_days,
+	@past_30_days_referrals                                                                        AS past_30_days,
+	@year_ago_30_days_referrals                                                                    AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'OLD References'                                                                               AS Metric,
+	@today_references                                                                              AS today,
+	@seven_days_ago_references                                                                     AS seven_days_ago,
+	@week_to_date_references                                                                       AS week_to_date,
+	@last_week_to_date_references                                                                  AS last_week_to_date,
+	@last_week_actual_references                                                                   AS last_week_actual,
+	@prior_30_days_references                                                                      AS prior_30_days,
+	@past_30_days_references                                                                       AS past_30_days,
+	@year_ago_30_days_references                                                                   AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'OLD Member Other'                                                                             AS Metric,
+	@today_member_other                                                                            AS today,
+	@seven_days_ago_member_other                                                                   AS seven_days_ago,
+	@week_to_date_member_other                                                                     AS week_to_date,
+	@last_week_to_date_member_other                                                                AS last_week_to_date,
+	@last_week_actual_member_other                                                                 AS last_week_actual,
+	@prior_30_days_member_other                                                                    AS prior_30_days,
+	@past_30_days_member_other                                                                     AS past_30_days,
+	@year_ago_30_days_member_other                                                                 AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'OLD Total Touches'                                                                            AS Metric,
+	@today_referrals             + @today_references             + @today_member_other             AS today,
+	@seven_days_ago_referrals    + @seven_days_ago_references    + @seven_days_ago_member_other    AS seven_days_ago,
+	@week_to_date_referrals      + @week_to_date_references      + @week_to_date_member_other      AS week_to_date,
+	@last_week_to_date_referrals + @last_week_to_date_references + @last_week_to_date_member_other AS last_week_to_date,
+	@last_week_actual_referrals  + @last_week_actual_references  + @last_week_actual_member_other  AS last_week_actual,
+	@prior_30_days_referrals     + @prior_30_days_references     + @prior_30_days_member_other     AS prior_30_days,
+	@past_30_days_referrals      + @past_30_days_references      + @past_30_days_member_other      AS past_30_days,
+	@year_ago_30_days_referrals  + @year_ago_30_days_references  + @year_ago_30_days_member_other  AS year_ago_30_days,
+	@update_time                                                                                   AS update_time
+
+UNION
+
+SELECT
+	'OLD Member-to-Member Touches'                                                                 AS Metric,
+	@today_referrals             + @today_references             + @today_member_other             AS today,
+	@seven_days_ago_referrals    + @seven_days_ago_references    + @seven_days_ago_member_other    AS seven_days_ago,
+	@week_to_date_referrals      + @week_to_date_references      + @week_to_date_member_other      AS week_to_date,
+	@last_week_to_date_referrals + @last_week_to_date_references + @last_week_to_date_member_other AS last_week_to_date,
+	@last_week_actual_referrals  + @last_week_actual_references  + @last_week_actual_member_other  AS last_week_actual,
+	@prior_30_days_referrals     + @prior_30_days_references     + @prior_30_days_member_other     AS prior_30_days,
+	@past_30_days_referrals      + @past_30_days_references      + @past_30_days_member_other      AS past_30_days,
+	@year_ago_30_days_referrals  + @year_ago_30_days_references  + @year_ago_30_days_member_other  AS year_ago_30_days,
+	@update_time                                                                                   AS update_time;
